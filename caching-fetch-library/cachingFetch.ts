@@ -1,13 +1,14 @@
+import React from 'react';
+import { UseCachingFetch, CachingFetch, CacheEntry } from './types';
+import { fetchData } from './utilities';
+
 // You may edit this file, add new files to support this file,
 // and/or add new dependencies to the project as you see fit.
 // However, you must not change the surface API presented from this file,
 // and you should not need to change any other files in the project to complete the challenge
 
-type UseCachingFetch = (url: string) => {
-  isLoading: boolean;
-  data: unknown;
-  error: Error | null;
-};
+const cache: Map<string, CacheEntry> = new Map();
+const CACHE_EXPIRY = 5 * 60 * 1000;
 
 /**
  * 1. Implement a caching fetch hook. The hook should return an object with the following properties:
@@ -28,13 +29,33 @@ type UseCachingFetch = (url: string) => {
  *
  */
 export const useCachingFetch: UseCachingFetch = (url) => {
-  return {
+  const [state, setState] = React.useState<CachingFetch>({
+    error: null,
     data: null,
-    isLoading: false,
-    error: new Error(
-      'UseCachingFetch has not been implemented, please read the instructions in DevTask.md',
-    ),
-  };
+    isLoading: true,
+  });
+
+  React.useEffect(() => {
+    const fetchDataFromCacheOrNetwork = async () => {
+      const cachedEntry = cache.get(url);
+      if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_EXPIRY) {
+        setState({ isLoading: false, data: cachedEntry.data, error: null });
+        return;
+      }
+
+      try {
+        const data = await fetchData(url);
+        cache.set(url, { data, timestamp: Date.now() });
+        setState({ isLoading: false, data, error: null });
+      } catch (error) {
+        setState({ isLoading: false, data: null, error: error as Error });
+      }
+    };
+
+    fetchDataFromCacheOrNetwork();
+  }, [url]);
+
+  return state;
 };
 
 /**
@@ -52,9 +73,12 @@ export const useCachingFetch: UseCachingFetch = (url) => {
  *
  */
 export const preloadCachingFetch = async (url: string): Promise<void> => {
-  throw new Error(
-    'preloadCachingFetch has not been implemented, please read the instructions in DevTask.md',
-  );
+  try {
+    const data = await fetchData(url);
+    cache.set(url, { data, timestamp: Date.now() });
+  } catch (error) {
+    console.error(`preloadCachingFetch Error: ${error}`);
+  }
 };
 
 /**
@@ -73,8 +97,12 @@ export const preloadCachingFetch = async (url: string): Promise<void> => {
  * 4. This file passes a type-check.
  *
  */
-export const serializeCache = (): string => '';
+export const serializeCache = (): string => JSON.stringify(Object.fromEntries(cache));
 
-export const initializeCache = (serializedCache: string): void => {};
+export const initializeCache = (serializedCache: string): void => {
+  const parsedCache = JSON.parse(serializedCache) as Record<string, CacheEntry>;
+  cache.clear();
+  Object.entries(parsedCache).forEach(([key, value]) => cache.set(key, value));
+};
 
-export const wipeCache = (): void => {};
+export const wipeCache = (): void => cache.clear();
